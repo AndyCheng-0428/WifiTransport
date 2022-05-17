@@ -12,13 +12,15 @@ import android.util.Base64;
 import android.util.Log;
 import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 
-import com.machines0008.wifitransportapplication.Default;
+import com.machines0008.wifitransportapplication.GlobalConstant;
 import com.machines0008.wifitransportapplication.FileContract;
 import com.machines0008.wifitransportapplication.R;
 import com.machines0008.wifitransportapplication.Singleton;
+import com.machines0008.wifitransportapplication.client.ClientWorkThread;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -29,6 +31,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 
 public class ClientActivity extends BaseActivity {
+    private static final String TAG = ClientActivity.class.getSimpleName();
     private Button btnSavePath;
     private Button btnStart;
     private TextView tvSavePath;
@@ -40,13 +43,30 @@ public class ClientActivity extends BaseActivity {
         super.onCreate(savedInstanceState);
         initView();
         initListener();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
-                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-                intent.setData(Uri.parse("package:" + getPackageName()));
-                startActivityForResult(intent, FILE_WRITTEN_REQUEST_CODE);
-            }
+    }
+
+    /***
+     * 是否需要要求檔案儲存"特殊權限"
+     * 在Android 11+手機以上須該權限。
+     * @return 若Android版本在11以下，則無需該權限，若已有該權限，亦無需要求該權限。
+     */
+    private boolean needRequestRStoragePermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return false;
         }
+        if (!Environment.isExternalStorageManager()) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 請求Android11+檔案儲存特殊權限
+     */
+    private void requestRStoragePermission() {
+        Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+        intent.setData(Uri.parse("package:" + getPackageName()));
+        startActivityForResult(intent, FILE_WRITTEN_REQUEST_CODE);
     }
 
     private void initListener() {
@@ -59,41 +79,11 @@ public class ClientActivity extends BaseActivity {
             if (TextUtils.isEmpty(tvSavePath.getText())) {
                 return;
             }
-            new Thread() {
-                @Override
-                public void run() {
-                    try (Socket socket = new Socket()) {
-                        socket.setSoTimeout(30 * 1000);
-                        InetSocketAddress inetSocketAddress = new InetSocketAddress("192.168.0.159", 8080);
-                        socket.connect(inetSocketAddress);
-                        try (InputStream is = socket.getInputStream();
-                             InputStreamReader isr = new InputStreamReader(is);
-                             BufferedReader br = new BufferedReader(isr);
-                        ) {
-                            String str = null;
-                            File file = new File(tvSavePath.getText().toString());
-                            if (!file.exists()) {
-                                boolean isMkdirs = file.mkdirs();
-                                Log.i("123456", "isMkDirs = " + isMkdirs);
-                            }
-                            File copyFile = null;
-                            FileOutputStream fos = null;
-                            while ((str = br.readLine()) != null) {
-                                FileContract contract = Singleton.gson.fromJson(str, FileContract.class);
-                                if (null == copyFile) {
-                                    copyFile = new File(file.getAbsolutePath() + "/" + contract.getName());
-                                    fos = new FileOutputStream(copyFile);
-                                }
-                                fos.write(Base64.decode(contract.getContent(), Base64.NO_WRAP));
-                            }
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                }
-            }.start();
+            if (needRequestRStoragePermission()) {
+                requestRStoragePermission();
+                return;
+            }
+            new ClientWorkThread(tvSavePath.getText().toString()).start();
         });
     }
 
@@ -104,8 +94,8 @@ public class ClientActivity extends BaseActivity {
             case FILE_CHOOSER_REQUEST_CODE:
                 if (resultCode == Activity.RESULT_OK) {
                     if (null != data) {
-                        Log.i("ClientActivity", Default.FILE_PATH);
-                        tvSavePath.setText(Default.FILE_PATH);
+                        Log.i(TAG, GlobalConstant.FILE_PATH);
+                        tvSavePath.setText(GlobalConstant.FILE_PATH);
                     }
                 }
                 break;

@@ -8,7 +8,6 @@ import android.os.Environment;
  * Created On: 2022/5/17
  * Usage:
  **/
-public class Default {
-
+public class GlobalConstant {
     public static final String FILE_PATH = Environment.getExternalStorageDirectory().getAbsolutePath() + "/WIFI/TRANSPORT";
 }
